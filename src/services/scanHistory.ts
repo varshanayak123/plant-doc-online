@@ -1,54 +1,40 @@
 import type { Prediction } from "./diseaseDetection";
+import { clearScans, listScans } from "@/lib/scans.functions";
+
 export type Scan = {
   id: string;
   createdAt: string;
-  image: string;
+  imageUrl: string;
   fileName: string;
   prediction: Prediction;
 };
-const KEY = "agrovision-demo-scans";
-export function readHistory(): Scan[] {
-  try {
-    const data: unknown = JSON.parse(localStorage.getItem(KEY) || "[]");
-    if (!Array.isArray(data)) return [];
-    return data.filter(
-      (item): item is Scan =>
-        !!item &&
-        typeof item === "object" &&
-        typeof item.id === "string" &&
-        typeof item.createdAt === "string" &&
-        typeof item.image === "string" &&
-        typeof item.fileName === "string" &&
-        item.prediction?.isMock === true &&
-        typeof item.prediction.confidence === "number" &&
-        ["early-blight", "inconclusive"].includes(item.prediction.disease),
-    );
-  } catch {
-    return [];
+const TOKEN_KEY = "agrovision-guest-token";
+
+/** Private, random guest token identifying this browser's scans. */
+export function getGuestToken() {
+  let token = localStorage.getItem(TOKEN_KEY);
+  if (!token || !/^[a-f0-9]{64}$/.test(token)) {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    token = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    localStorage.setItem(TOKEN_KEY, token);
   }
+  return token;
 }
-export function saveScan(scan: Scan) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify([scan, ...readHistory()]));
-    return true;
-  } catch {
-    return false;
-  }
+
+export async function readHistory(): Promise<Scan[]> {
+  return (await listScans({ data: { guestToken: getGuestToken() } })) as Scan[];
 }
-export function clearHistory() {
-  try {
-    localStorage.removeItem(KEY);
-    return true;
-  } catch {
-    return false;
-  }
+
+export async function clearHistory() {
+  await clearScans({ data: { guestToken: getGuestToken() } });
 }
-export function createThumbnail(source: string): Promise<string> {
+
+export function createThumbnail(source: string, size = 1024): Promise<string> {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => {
       const canvas = document.createElement("canvas");
-      const scale = Math.min(1, 480 / Math.max(image.width, image.height));
+      const scale = Math.min(1, size / Math.max(image.width, image.height));
       canvas.width = Math.max(1, Math.round(image.width * scale));
       canvas.height = Math.max(1, Math.round(image.height * scale));
       const ctx = canvas.getContext("2d");
@@ -57,7 +43,7 @@ export function createThumbnail(source: string): Promise<string> {
         return;
       }
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL("image/jpeg", 0.75));
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
     };
     image.onerror = () => reject(new Error("Invalid image"));
     image.src = source;

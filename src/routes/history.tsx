@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { History, Trash2, ArrowRight, FlaskConical, Eye, Sprout } from "lucide-react";
+import { History, Trash2, ArrowRight, FlaskConical, Eye, Sprout, RefreshCw, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,12 +25,11 @@ import { Result } from "@/components/agro/result";
 import { useLanguage } from "@/lib/i18n";
 import { pageHead } from "@/lib/metadata";
 import { readHistory, clearHistory, type Scan } from "@/services/scanHistory";
-import { isLowConfidence } from "@/services/diseaseDetection";
 export const Route = createFileRoute("/history")({
   head: () =>
     pageHead(
       "Scan History",
-      "Review your simulated crop disease scans saved privately in this browser on this device.",
+      "Review your previous AI crop disease scans, kept private to this browser.",
     ),
   component: HistoryPage,
 });
@@ -39,19 +38,52 @@ function HistoryPage() {
   const [scans, setScans] = useState<Scan[]>([]);
   const [selected, setSelected] = useState<Scan | null>(null);
   const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  async function load() {
+    setLoading(true);
+    setLoadError(false);
+    try {
+      setScans(await readHistory());
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
+  }
   useEffect(() => {
-    setScans(readHistory());
+    load();
   }, []);
   return (
     <main className="container page-main">
       <PageHeading title="history" description="historyDesc" />
       <DemoNotice />
-      {scans.length ? (
+      {loading ? (
+        <div className="empty-history" role="status">
+          <LoaderCircle className="mx-auto text-primary animate-spin" size={32} />
+          <p className="text-muted-foreground mt-4">{t("loading")}</p>
+        </div>
+      ) : loadError ? (
+        <div className="empty-history">
+          <p role="alert" className="error-message mb-4">
+            {t("historyError")}
+          </p>
+          <Button onClick={load}>
+            <RefreshCw />
+            {t("retry")}
+          </Button>
+        </div>
+      ) : scans.length ? (
         <>
           <div className="history-toolbar">
             <p className="text-sm text-muted-foreground">
               {scans.length} {t("count")}
             </p>
+            <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={load}>
+              <RefreshCw />
+              {t("refresh")}
+            </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" size="sm">
@@ -67,11 +99,14 @@ function HistoryPage() {
                 <AlertDialogFooter>
                   <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
                   <AlertDialogAction
-                    onClick={() => {
-                      if (clearHistory()) {
+                    onClick={async () => {
+                      try {
+                        await clearHistory();
                         setScans([]);
                         setError(false);
-                      } else setError(true);
+                      } catch {
+                        setError(true);
+                      }
                     }}
                   >
                     {t("clear")}
@@ -79,6 +114,7 @@ function HistoryPage() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+            </div>
           </div>
           {error && (
             <p role="alert" className="error-message mb-4">
@@ -89,7 +125,7 @@ function HistoryPage() {
             {scans.map((scan) => (
               <article className="history-card" key={scan.id}>
                 <img
-                  src={scan.image}
+                  src={scan.imageUrl}
                   width={480}
                   height={480}
                   alt={t("leafImage")}
@@ -101,8 +137,8 @@ function HistoryPage() {
                     <FlaskConical size={12} />
                     {t("simulated")}
                   </span>
-                  <p className="text-xs text-muted-foreground mt-4">{t("tomato")}</p>
-                  <h2>{t(isLowConfidence(scan.prediction) ? "uncertain" : "disease")}</h2>
+                  <p className="text-xs text-muted-foreground mt-4">{scan.prediction.crop[language] || scan.prediction.crop.en}</p>
+                  <h2>{scan.prediction.disease[language] || scan.prediction.disease.en}</h2>
                   <div className="history-meta">
                     <span>
                       {new Date(scan.createdAt).toLocaleString(
@@ -155,7 +191,7 @@ function HistoryPage() {
           {selected && (
             <>
               <img
-                src={selected.image}
+                src={selected.imageUrl}
                 width={480}
                 height={480}
                 alt={t("leafImage")}

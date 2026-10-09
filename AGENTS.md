@@ -11,6 +11,6 @@
 
 ## Application architecture
 - Use separate TanStack leaf routes for each main page with shared header/footer and a language provider in the root; each page needs independently shareable metadata.
-- Keep all demo prediction logic in src/services/diseaseDetection.ts; results must remain independent of uploaded image contents to avoid implying a real diagnosis.
-- Store only scan history and language preference in browser localStorage, reading after hydration; compress scan photos before saving to reduce browser storage use.
-- Keep multilingual display copy in the shared i18n module and translate disease details at display time so saved scans work in every supported language.
+- Route all detection through src/services/diseaseDetection.ts, which calls server functions in src/lib/scans.functions.ts; AI calls and the storage admin client stay server-side so keys and other guests' data never reach the browser.
+- Guests are identified by a random token in localStorage; the server stores only its SHA-256 hash and scan_history/crop-images have no client policies, so records are reachable only via token-checked server functions.
+- Keep multilingual display copy in the shared i18n module and have the AI return each disease detail in every supported language so saved scans display in any language.
