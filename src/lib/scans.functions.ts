@@ -30,14 +30,16 @@ export const uploadLeaf = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(data.image);
-    if (!match || !TYPES.includes(match[1])) return { ok: false as const, error: "invalidFile" as ScanError };
-    const bytes = Uint8Array.from(atob(match[2]), (c) => c.charCodeAt(0));
+    const mime = match?.[1] ?? "";
+    const b64 = match?.[2] ?? "";
+    if (!TYPES.includes(mime) || !b64) return { ok: false as const, error: "invalidFile" as ScanError };
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     if (!bytes.length || bytes.length > MAX_BYTES) return { ok: false as const, error: "invalidFile" as ScanError };
     const key = await guestKey(data.guestToken);
-    const ext = match[1].split("/")[1];
+    const ext = mime.split("/")[1] ?? "jpg";
     const path = `${key}/${crypto.randomUUID()}.${ext}`;
     const db = await admin();
-    const { error } = await db.storage.from("crop-images").upload(path, bytes, { contentType: match[1] });
+    const { error } = await db.storage.from("crop-images").upload(path, bytes, { contentType: mime });
     if (error) {
       console.error("upload failed", error);
       return { ok: false as const, error: "uploadFailed" as ScanError };
