@@ -12,13 +12,6 @@ import {
   History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { PageHeading, DemoNotice } from "@/components/agro/site-shell";
 import { Result } from "@/components/agro/result";
 import { useLanguage } from "@/lib/i18n";
@@ -62,6 +55,9 @@ function Detect() {
       alive.current = false;
     };
   }, []);
+  useEffect(() => {
+    setUploadedPath(null);
+  }, [photo]);
   async function receive(file?: File) {
     if (!file || busy) return;
     const version = ++uploadVersion.current;
