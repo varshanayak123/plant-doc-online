@@ -25,18 +25,18 @@ import { useLanguage } from "@/lib/i18n";
 import { pageHead } from "@/lib/metadata";
 import {
   analyzeImage,
+  uploadImage,
   validateImage,
   isLowConfidence,
   type Prediction,
-  type DemoScenario,
 } from "@/services/diseaseDetection";
-import { createThumbnail, saveScan } from "@/services/scanHistory";
+import { createThumbnail, getGuestToken } from "@/services/scanHistory";
 import sample from "@/assets/tomato-leaf.jpg";
 export const Route = createFileRoute("/detect")({
   head: () =>
     pageHead(
       "Detect Disease",
-      "Upload a crop leaf image and explore a simulated disease report. Demo only: no real AI analysis.",
+      "Upload a crop leaf photo for an AI-powered disease screening with symptoms and prevention tips.",
     ),
   component: Detect,
 });
@@ -51,7 +51,8 @@ function Detect() {
   const [preparing, setPreparing] = useState(false);
   const uploadVersion = useRef(0);
   const resultPanel = useRef<HTMLElement>(null);
-  const [scenario, setScenario] = useState<DemoScenario>("early-blight");
+  const [stage, setStage] = useState<"uploading" | "analyzing">("uploading");
+  const [uploadedPath, setUploadedPath] = useState<string | null>(null);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [saved, setSaved] = useState<boolean | null>(null);
   const alive = useRef(true);
@@ -111,22 +112,33 @@ function Detect() {
         block: "start",
       });
     try {
-      const result = await analyzeImage(scenario);
+      const guest = getGuestToken();
+      let path = uploadedPath;
+      if (!path) {
+        setStage("uploading");
+        const image = photo.startsWith("data:") ? photo : await createThumbnail(photo);
+        const up = await uploadImage(guest, image);
+        if (!alive.current) return;
+        if (!up.ok) {
+          setError(up.error);
+          return;
+        }
+        path = up.path;
+        setUploadedPath(path);
+      }
+      setStage("analyzing");
+      const res = await analyzeImage(guest, path, fileName);
       if (!alive.current) return;
-      const image = await createThumbnail(photo);
-      if (!alive.current) return;
-      setPrediction(result);
-      setSaved(
-        saveScan({
-          id: crypto.randomUUID(),
-          createdAt: new Date().toISOString(),
-          image,
-          fileName,
-          prediction: result,
-        }),
-      );
+      if (!res.ok) {
+        if (res.error === "notLeaf") setUploadedPath(null);
+        setError(res.error);
+        return;
+      }
+      setPrediction(res.prediction);
+      setSaved(res.saved);
+      setUploadedPath(null);
     } catch {
-      if (alive.current) setError("fileError");
+      if (alive.current) setError("aiUnavailable");
     } finally {
       if (alive.current) setBusy(false);
     }
@@ -248,26 +260,12 @@ function Detect() {
               {t(error as "invalidFile")}
             </p>
           )}
-          <label className="form-label" htmlFor="scenario">
-            {t("scenario")}
-          </label>
-          <Select
-            value={scenario}
-            onValueChange={(v) => {
-              setScenario(v as DemoScenario);
-              setPrediction(null);
-              setSaved(null);
-            }}
-            disabled={busy || preparing}
-          >
-            <SelectTrigger id="scenario" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="early-blight">{t("regular")}</SelectItem>
-              <SelectItem value="low-confidence">{t("low")}</SelectItem>
-            </SelectContent>
-          </Select>
+          {error && error !== "invalidFile" && error !== "badImage" && photo && (
+            <Button variant="outline" className="w-full mt-3" onClick={analyze} disabled={busy}>
+              <ScanLine />
+              {t("retry")}
+            </Button>
+          )}
           <Button
             size="lg"
             className="analyze-button h-12"
@@ -275,7 +273,7 @@ function Detect() {
             onClick={analyze}
           >
             {busy ? <LoaderCircle className="animate-spin" /> : <ScanLine />}
-            {t(busy ? "analyzing" : "analyze")}
+            {t(busy ? stage : "analyze")}
           </Button>
         </section>
         <section
